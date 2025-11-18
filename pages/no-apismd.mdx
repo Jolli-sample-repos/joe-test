@@ -1,0 +1,36 @@
+---
+title: no-apis.md
+---
+
+**Last Updated:** 11/17/2025
+
+---
+
+---
+sidebar_position: 1
+---
+
+# No APIs Found
+
+No API endpoints were detected in this repository.
+
+## What does this mean?
+
+The code scanner looked for Express/Router route definitions but couldn't find any.
+
+## Common reasons:
+
+- The repository doesn't contain API endpoints
+- API routes are defined in a format not yet supported by the scanner
+- The route files are in a location that wasn't scanned
+
+## Supported patterns:
+
+The scanner looks for patterns like:
+```javascript
+router.get('/api/users', ...)
+app.post('/api/chat', ...)
+express.Router().put('/api/items/:id', ...)
+```
+
+If you believe your repository has APIs, please check the route definitions or contact support.
