@@ -1,0 +1,996 @@
+---
+title: Architecture Document
+---
+
+**Last Updated:** 11/17/2025
+
+---
+
+# Jolli Architecture Document 
+
+## Overview
+
+Jolli is a full-stack AI-powered documentation platform built with a modern TypeScript monorepo architecture. The system enables intelligent documentation management, GitHub integration, collaborative conversations, and automated documentation site generation through a combination of AI agents, job scheduling, and real-time streaming.
+
+## System Architecture
+
+### High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Frontend                             │
+│  (React/Preact + Vite + TailwindCSS + Intlayer)            │
+└────────────────────┬────────────────────────────────────────┘
+                     │ HTTP/SSE
+┌────────────────────┴────────────────────────────────────────┐
+│                      Backend (Express)                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   Routers    │  │   Services   │  │  Integration │     │
+│  │              │  │              │  │   Manager    │     │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
+│         │                  │                  │              │
+│  ┌──────┴──────────────────┴──────────────────┴───────┐    │
+│  │              Core Layer                             │    │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐         │    │
+│  │  │   Agent  │  │ Database │  │  Chunker │         │    │
+│  │  │  System  │  │          │  │          │         │    │
+│  │  └──────────┘  └──────────┘  └──────────┘         │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │            Job Scheduler (pg-boss)                    │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+┌────────────────────┴────────────────────────────────────────┐
+│                    Data Layer                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  PostgreSQL  │  │   pgvector   │  │   pg-boss    │     │
+│  │              │  │  (embeddings)│  │   (jobs)     │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
+└──────────────────────────────────────────────────────────────┘
+
+External Services:
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   GitHub    │  │  OpenAI /   │  │  AWS Param  │  │   Vercel    │
+│     API     │  │  Anthropic  │  │    Store    │  │             │
+└─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
+```
+
+## Core Components
+
+### 1. Frontend Architecture
+
+**Technology Stack:**
+- **Framework**: React 19.2 with Preact 10.27 for production builds
+- **Build Tool**: Vite 7.1
+- **Styling**: TailwindCSS 4.1 with custom CSS modules
+- **UI Components**: Radix UI primitives (dropdown, select, tabs, slots)
+- **Internationalization**: Intlayer 7.0 for i18n support (English/Spanish)
+- **State Management**: React Context API
+- **Testing**: Vitest with 100% line/function/statement coverage (98% branch coverage)
+
+**Key Features:**
+- Server-Sent Events (SSE) for real-time AI streaming responses
+- Markdown rendering with syntax highlighting (highlight.js)
+- Component-based architecture with shadcn-style UI components
+- Responsive design with mobile-first approach
+- Hot Module Replacement (HMR) in development
+
+**Directory Structure:**
+```
+frontend/src/
+├── components/      # Reusable UI components
+├── contexts/        # React context providers
+├── localization/    # i18n content files
+├── ui/              # Base UI primitives
+├── util/            # Utility functions
+└── Main.tsx         # Application entry point
+```
+
+### 2. Backend Architecture
+
+**Technology Stack:**
+- **Framework**: Express 5.1 with TypeScript
+- **Runtime**: Node.js 24.10 with ES Modules
+- **Database**: PostgreSQL 17.6 with Sequelize 6.37 ORM
+- **Vector Search**: pgvector 0.2 for embeddings
+- **Job Queue**: pg-boss 11.1 for background job processing
+- **AI/ML**: LangChain + LangGraph for agent orchestration
+- **Authentication**: express-session with OAuth2 (GitHub, Google)
+- **Configuration**: AWS Systems Manager Parameter Store
+- **Testing**: Vitest with 100% code coverage requirement
+
+**Core Layers:**
+
+#### 2.1 Router Layer
+HTTP endpoint handlers organized by domain:
+- `AuthRouter` - Authentication and OAuth flows
+- `ChatRouter` - AI chat streaming endpoints
+- `CollabConvoRouter` - Collaborative conversation management
+- `ConvoRouter` - Conversation CRUD operations
+- `DocRouter` - Document management
+- `DocDraftRouter` - Draft document operations
+- `DocsiteRouter` - Documentation site management
+- `SiteRouter` - Site creation and deployment
+- `GitHubAppRouter` - GitHub App integration
+- `IntegrationRouter` - Third-party integrations
+- `JobRouter` - Job monitoring and control
+- `KnowledgeGraphRouter` - Knowledge graph operations
+- `WebhookRouter` - GitHub webhook handling
+- `StatusRouter` - Health checks
+- `VisitRouter` - Analytics tracking
+- `DevToolsRouter` - Development utilities
+
+#### 2.2 Core Layer
+
+**Agent System** (`core/agent/`)
+- LangGraph-based multi-agent framework
+- Support for multiple LLM providers:
+  - OpenAI (GPT-4, GPT-4o-mini)
+  - Anthropic (Claude 3.5 Sonnet, Claude 3 Opus/Haiku)
+  - AWS Bedrock (planned)
+  - Google AI (planned)
+- Streaming support with Server-Sent Events
+- State management and memory persistence
+- Tool/function calling capabilities
+- Multi-agent orchestration with routing
+
+**Database** (`core/Database.ts`)
+- Centralized data access layer
+- DAO (Data Access Object) pattern
+- Automatic schema synchronization
+- Post-sync hooks for data migrations
+- Transaction support
+
+**Chunker** (`core/Chunker.ts`)
+- Document text chunking for vector embeddings
+- Semantic chunking strategies
+- Integration with AI embedding models
+- Chunk storage and retrieval
+
+#### 2.3 Data Access Layer (DAO)
+
+Each DAO provides CRUD operations for a specific domain:
+- `AuthDao` - User authentication data
+- `ChunkDao` - Document chunks and embeddings
+- `CollabConvoDao` - Collaborative conversations
+- `ConvoDao` - Chat conversations
+- `DocDao` - Documents with versioning
+- `DocDraftDao` - Draft documents
+- `DocsiteDao` - Documentation sites
+- `SiteDao` - Deployed sites
+- `GitHubInstallationDao` - GitHub App installations
+- `IntegrationDao` - Third-party integrations
+- `JobDao` - Job execution metadata
+- `UserDao` - User profiles
+- `VisitDao` - Analytics visits
+
+#### 2.4 Integration System
+
+**IntegrationsManager** (`integrations/IntegrationsManager.ts`)
+- Plugin architecture for third-party integrations
+- Integration lifecycle management (create, update, delete)
+- Type-specific behavior handlers
+- Access check validation
+- Event-driven integration updates
+
+**GitHub Integration** (`integrations/GithubIntegrationTypeBehavior.ts`)
+- GitHub App authentication via Octokit
+- Repository access validation
+- Installation lifecycle management
+- Webhook event processing
+- Branch and file synchronization
+
+#### 2.5 Job Scheduling System
+
+**JobScheduler** (`jobs/JobScheduler.ts`)
+Built on pg-boss for reliable background job processing:
+
+**Features:**
+- Job registration with schema validation
+- Priority-based queue management
+- Retry logic with exponential backoff
+- Cron-based scheduling
+- Job chaining via event emitters
+- Loop prevention (max chain depth, max repetitions)
+- Job execution history and logging
+- Real-time job status updates
+- Cancellation and retry support
+
+**Job Categories:**
+- **Core Jobs** (`jobs/CoreJobs.ts`)
+  - Database cleanup
+  - Statistics aggregation
+  - System maintenance
+
+- **Demo Jobs** (`jobs/DemoJobs.ts`)
+  - Development testing utilities
+  
+- **Knowledge Graph Jobs** (`jobs/KnowledgeGraphJobs.ts`)
+  - Document graph construction
+  - Relationship extraction
+  - Citation analysis
+
+- **Integration Jobs**
+  - GitHub repository synchronization
+  - File ingestion
+  - Webhook processing
+
+**Job Event System:**
+- Event-driven job triggering
+- Job chain analysis
+- Source job tracking
+- Custom event parameters
+- Filtering via `shouldTriggerEvent`
+
+### 3. Configuration Management
+
+**Environment-Based Configuration:**
+- `.env` files for local development
+- AWS Parameter Store for deployed environments
+- Hierarchical configuration: `process.env` → Parameter Store → defaults
+- Type-safe configuration with Zod validation
+- Runtime configuration reloading
+
+**Configuration Schema** (`config/Config.ts`):
+```typescript
+{
+  // Server
+  NODE_ENV, ORIGIN, ROOT_PATH
+  
+  // Database
+  POSTGRES_*, SEQUELIZE
+  
+  // AI/ML
+  OPENAI_API_KEY, ANTHROPIC_API_KEY, LLM_PROVIDER, LLM_MODEL
+  
+  // GitHub
+  GITHUB_APPS_INFO, GITHUB_TOKEN, GITHUB_ORG
+  
+  // OAuth
+  GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+  
+  // Jobs
+  JOBS_STORE_FOR_DAYS
+  
+  // AWS
+  AWS_REGION, PSTORE_ENV
+  
+  // Development
+  USE_DEVELOPER_TOOLS, GITHUB_CLEAR, SEED_DATABASE, SMEE_API_URL
+  
+  // Workflows
+  E2B_API_KEY, E2B_TEMPLATE_ID, VERCEL_TOKEN
+}
+```
+
+### 4. CLI Tool
+
+**Technology Stack:**
+- Commander.js for CLI framework
+- Ink for React-based terminal UI
+- Interactive mode with input prompts
+
+**Commands:**
+- `login` - OAuth browser authentication
+- `logout` - Clear credentials
+- `status` - API health check
+- `sync <url>` - Sync GitHub repository
+- `interactive` - Start chat session
+
+### 5. Common Library
+
+**Shared TypeScript Package** (`common/`)
+Provides shared types, utilities, and client libraries:
+
+**Clients:**
+- `AuthClient` - Authentication API
+- `ChatClient` - Chat streaming
+- `CollabConvoClient` - Collaborative conversations
+- `DocClient`, `DocDraftClient` - Document management
+- `DocsiteClient`, `SiteClient` - Site management
+- `GitHubClient` - GitHub operations
+- `IntegrationClient` - Integration management
+- `JobClient` - Job monitoring
+
+**Utilities:**
+- `LoggerCommon` - Pino-based structured logging
+- `JsonUtils` - JSON manipulation
+- `ObjectUtils` - Object helpers
+- `Async` - Promise utilities
+
+### 6. Tools and Extensions
+
+#### 6.1 Jolli Agent (`tools/jolliagent`)
+AI-powered workflow automation using E2B sandboxes:
+- **Architecture documentation generation**
+- **Getting started guide creation**
+- **Code-to-documentation conversion**
+- **Documentation site generation**
+- **Citation graph analysis**
+- **Documentation scoring**
+
+**Technology:**
+- Anthropic Claude via SDK
+- E2B sandboxes for isolated execution
+- Markdown parsing with remark
+- YAML frontmatter support
+
+#### 6.2 VSCode Extension (`extensions/vscode`)
+IDE integration for Jolli (planned)
+
+#### 6.3 Documentation Tools
+- `code2docusaurus` - Convert code to Docusaurus sites
+- `docs2docusaurus` - Markdown to Docusaurus
+- `docusaurus2vercel` - Deploy Docusaurus to Vercel
+
+## Data Models
+
+### Core Entities
+
+**Document** (`model/Doc.ts`)
+```typescript
+{
+  jrn: string;           // Jolli Resource Name (unique identifier)
+  title: string;
+  content: string;       // Markdown content
+  version: number;
+  metadata?: object;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+**Chunk** (`model/Chunk.ts`)
+```typescript
+{
+  id: number;
+  docJrn: string;
+  content: string;
+  embedding: number[];   // Vector embedding (pgvector)
+  metadata?: object;
+  createdAt: Date;
+}
+```
+
+**Integration** (`model/Integration.ts`)
+```typescript
+{
+  id: number;
+  type: 'github' | 'unknown';
+  name: string;
+  status: 'active' | 'needs_repo_access' | 'error' | 'pending_installation';
+  metadata?: {
+    repo?: string;
+    branch?: string;
+    features?: string[];
+    installationId?: number;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+**Job Execution** (`types/JobTypes.ts`)
+```typescript
+{
+  id: string;
+  name: string;
+  title?: string;
+  params: unknown;
+  status: 'queued' | 'active' | 'completed' | 'failed' | 'cancelled';
+  logs: JobLog[];
+  stats?: unknown;
+  retryCount: number;
+  sourceJobId?: string;
+  loopPrevented?: boolean;
+  loopReason?: string;
+  completionInfo?: CompletionInfo;
+  error?: string;
+  startedAt?: Date;
+  completedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+**Conversation** (`model/Convo.ts`)
+```typescript
+{
+  id: number;
+  userId?: number;
+  visitorId?: string;
+  title: string;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+**Docsite** (`model/Docsite.ts`)
+```typescript
+{
+  id: number;
+  name: string;
+  integrationId: number;
+  config: object;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+**Site** (`model/Site.ts`)
+```typescript
+{
+  id: number;
+  name: string;
+  description?: string;
+  framework: 'docusaurus' | 'nextra';
+  repoUrl: string;
+  deployUrl?: string;
+  status: 'creating' | 'active' | 'error';
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+## Key Workflows
+
+### 1. Document Ingestion Flow
+
+```
+GitHub Repo → Webhook Event → Job Queue → File Extraction
+                                              ↓
+                                         Parse Markdown
+                                              ↓
+                                         Create Chunks
+                                              ↓
+                                      Generate Embeddings
+                                              ↓
+                                        Store in Database
+```
+
+**Implementation:**
+1. User installs GitHub App on repository
+2. Webhook events trigger on push/PR
+3. Job scheduler queues ingestion job
+4. Integration manager extracts files via Octokit
+5. Chunker splits documents into semantic chunks
+6. AI generates vector embeddings
+7. Chunks stored with embeddings in PostgreSQL+pgvector
+
+### 2. AI Chat Flow
+
+```
+User Message → Chat Router → Agent System → LLM Provider
+                                 ↓
+                            RAG Retrieval (optional)
+                                 ↓
+                            Stream Response
+                                 ↓
+                         Frontend (SSE) → User
+```
+
+**Implementation:**
+1. Frontend sends message via POST `/api/chat/stream`
+2. Router authenticates and validates request
+3. Optional: Retrieve relevant chunks via vector similarity
+4. Agent system constructs prompt with context
+5. LLM streams response tokens
+6. Backend forwards as Server-Sent Events
+7. Frontend renders incrementally
+8. Conversation saved to database
+
+### 3. Job Execution Flow
+
+```
+Event Trigger → Job Scheduler → Queue Job → pg-boss
+                                                ↓
+                                         Worker Picks Up
+                                                ↓
+                                          Execute Handler
+                                                ↓
+                                      Update Status/Logs
+                                                ↓
+                                         Emit Events
+                                                ↓
+                                      Trigger Chained Jobs
+```
+
+**Features:**
+- Priority-based execution
+- Automatic retries with backoff
+- Loop prevention
+- Job chain tracking
+- Real-time status updates via SSE
+
+### 4. GitHub Integration Flow
+
+```
+Install GitHub App → Create Integration → Sync Repository
+                                               ↓
+                                      Queue Sync Jobs
+                                               ↓
+                                    Process Files in Parallel
+                                               ↓
+                                      Webhook Events
+                                               ↓
+                                    Incremental Updates
+```
+
+**Implementation:**
+1. User installs GitHub App via OAuth flow
+2. Backend receives installation webhook
+3. Integration created with metadata
+4. Initial sync job queued
+5. Files fetched via GitHub API
+6. Documents created/updated
+7. Ongoing webhooks trigger incremental updates
+
+### 5. Documentation Site Generation
+
+```
+Select Repository → Choose Framework → Generate Site Structure
+                                            ↓
+                                    Create GitHub Repo
+                                            ↓
+                                    Push Generated Code
+                                            ↓
+                                    Deploy to Vercel
+                                            ↓
+                                    Return Site URL
+```
+
+**Implementation:**
+1. User selects source repository and framework (Docusaurus/Nextra)
+2. Backend generates site structure via templates
+3. GitHub API creates new repository
+4. Generated code pushed to repository
+5. Vercel API triggers deployment
+6. Site URL returned to user
+
+## Authentication & Authorization
+
+### Authentication Methods
+
+**OAuth 2.0 Providers:**
+- GitHub OAuth App
+- Google OAuth 2.0
+
+**Flow:**
+1. Frontend redirects to `/connect/:provider`
+2. Grant.js handles OAuth dance
+3. Callback receives tokens
+4. Backend creates/updates user
+5. JWT token issued
+6. Token stored in HTTP-only cookie
+
+**Session Management:**
+- express-session with Sequelize store
+- Session persistence in PostgreSQL
+- Visitor tracking via cookies
+
+**JWT Tokens:**
+- Algorithm: HS256 (configurable)
+- Expiry: 34 days (configurable)
+- Payload: `{ userId, email, name, picture }`
+- Signed with TOKEN_SECRET
+
+### Authorization
+
+**Middleware:**
+- `authHandler` - Validates JWT token
+- `tokenUtil` - Encodes/decodes tokens
+- Per-route authorization checks
+
+**Access Control:**
+- User-scoped resources (conversations, drafts)
+- Visitor-scoped resources (anonymous usage)
+- Integration access validation
+- GitHub App installation permissions
+
+## Real-Time Communication
+
+### Server-Sent Events (SSE)
+
+**Use Cases:**
+1. **AI Chat Streaming** - Token-by-token response delivery
+2. **Job Status Updates** - Real-time job progress
+3. **Integration Events** - Sync status notifications
+
+**Implementation:**
+```typescript
+// Backend
+res.setHeader('Content-Type', 'text/event-stream');
+res.setHeader('Cache-Control', 'no-cache');
+res.setHeader('Connection', 'keep-alive');
+res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+
+// Frontend
+const eventSource = new EventSource('/api/chat/stream');
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  // Handle chunk
+};
+```
+
+## Deployment Architecture
+
+### Development Environment
+
+**Local Setup:**
+- PostgreSQL via Docker or local install
+- Node.js 24.10.0
+- npm 11.6.1
+- smee.io for webhook proxying
+- AWS credentials for Parameter Store (optional)
+
+**Development Features:**
+- Hot Module Replacement (HMR)
+- Developer Tools UI
+- Database seeding
+- GitHub App creation helper
+- Job testing utilities
+
+### Production Environment
+
+**Infrastructure:**
+- AWS hosting (assumed)
+- PostgreSQL 17.6 (AWS RDS)
+- Parameter Store for secrets
+- GitHub App for integrations
+- Vercel for site deployments
+
+**Configuration:**
+- Environment: `production`
+- Origin: Production domain
+- PostgreSQL connection pooling (max 5)
+- SSL enabled
+- Session security enabled
+- Static asset serving from `/assets`
+
+**Monitoring:**
+- Structured logging with Pino
+- Job execution history
+- Error tracking
+- Performance metrics
+
+## Security Considerations
+
+### Data Protection
+
+1. **Secrets Management**
+   - AWS Parameter Store for production secrets
+   - Environment variables for local development
+   - No secrets in code or version control
+
+2. **Database Security**
+   - SSL connections in production
+   - Connection pooling
+   - Prepared statements (Sequelize)
+   - SQL injection protection
+
+3. **API Security**
+   - CORS configuration
+   - CSRF protection via cookies
+   - Rate limiting (planned)
+   - Input validation with Zod schemas
+
+4. **Authentication Security**
+   - HTTP-only cookies
+   - Secure flag in production
+   - JWT signature verification
+   - Token expiration
+   - Session invalidation
+
+### GitHub Integration Security
+
+1. **Webhook Verification**
+   - HMAC signature validation
+   - Secret-based authentication
+   - Replay attack prevention
+
+2. **GitHub App Permissions**
+   - Minimal required scopes
+   - Installation-level permissions
+   - Token rotation
+   - Access validation before operations
+
+3. **Repository Access**
+   - Installation ID verification
+   - Repository permission checks
+   - Branch protection awareness
+
+## Performance Optimization
+
+### Database Optimization
+
+1. **Indexing**
+   - Unique indexes on natural keys
+   - Composite indexes for queries
+   - Vector indexes for pgvector
+
+2. **Query Optimization**
+   - Eager loading for relations
+   - Pagination for large result sets
+   - Query result caching (planned)
+
+3. **Connection Pooling**
+   - Max 5 connections per instance
+   - Connection reuse
+   - Graceful connection handling
+
+### Caching Strategy
+
+1. **Static Assets**
+   - 1-year cache for `/assets`
+   - Content hashing for cache busting
+   - No-cache for HTML
+
+2. **API Responses**
+   - ETags (planned)
+   - Conditional requests (planned)
+   - CDN integration (planned)
+
+### Job Processing
+
+1. **Parallel Execution**
+   - Multiple workers per job type
+   - Concurrent job processing
+   - Priority queues
+
+2. **Batch Processing**
+   - Chunk batch inserts
+   - Bulk embedding generation
+   - Transaction batching
+
+## Testing Strategy
+
+### Backend Testing
+
+**Coverage Requirements:**
+- Lines: 100%
+- Functions: 100%
+- Statements: 100%
+- Branches: 100%
+
+**Testing Tools:**
+- Vitest for unit/integration tests
+- Supertest for API testing
+- @electric-sql/pglite for in-memory database
+- Mock implementations for external services
+
+**Test Categories:**
+1. Unit tests for business logic
+2. DAO tests with in-memory database
+3. Router tests with supertest
+4. Integration tests for workflows
+5. Job scheduler tests
+
+### Frontend Testing
+
+**Coverage Requirements:**
+- Lines: 100%
+- Functions: 100%
+- Statements: 100%
+- Branches: 98%
+
+**Testing Tools:**
+- Vitest for unit tests
+- @testing-library/preact for component tests
+- JSDOM for DOM simulation
+- Mock Intlayer for i18n testing
+
+**Test Categories:**
+1. Component unit tests
+2. Hook tests
+3. Utility function tests
+4. Integration tests for user flows
+
+### End-to-End Testing
+
+**Planned:**
+- Playwright for E2E tests
+- Full user workflow testing
+- Cross-browser testing
+
+## Internationalization (i18n)
+
+**Framework:** Intlayer 7.0
+
+**Supported Languages:**
+- English (default)
+- Spanish
+
+**Implementation:**
+1. Content files (`.content.ts`) define translations
+2. `useIntlayer` hook accesses translations
+3. Backend uses messageKey + context pattern
+4. Frontend uses component-level content files
+
+**Example:**
+```typescript
+// Content file
+export default {
+  key: "welcome-message",
+  content: {
+    en: "Welcome to Jolli",
+    es: "Bienvenido a Jolli"
+  }
+};
+
+// Component
+const { welcomeMessage } = useIntlayer("welcome-message");
+```
+
+## Monitoring and Observability
+
+### Logging
+
+**Framework:** Pino
+
+**Log Levels:**
+- DEBUG: Detailed diagnostic information
+- INFO: General informational messages
+- WARN: Warning messages
+- ERROR: Error messages with stack traces
+
+**Structured Logging:**
+```typescript
+log.info({ userId, action }, "User performed action");
+log.error(error, "Operation failed");
+```
+
+**Log Destinations:**
+- Console (development)
+- File rotation (production)
+- CloudWatch (planned)
+
+### Metrics
+
+**Job Metrics:**
+- Job execution count
+- Success/failure rates
+- Average execution time
+- Queue depth
+- Retry counts
+
+**API Metrics:**
+- Request count
+- Response times
+- Error rates
+- Endpoint usage
+
+**System Metrics:**
+- Database connection pool
+- Memory usage
+- CPU usage
+
+## Development Workflow
+
+### Monorepo Structure
+
+**Workspaces:**
+- `backend` - Express backend
+- `frontend` - React frontend
+- `cli` - Command-line tool
+- `common` - Shared library
+- `extensions/vscode` - VSCode extension
+- `tools/code2docusaurus` - Code converter
+- `tools/docs2docusaurus` - Docs converter
+- `tools/docusaurus2vercel` - Deployment tool
+- `tools/jolliagent` - AI workflow engine
+
+**Dependency Management:**
+- npm workspaces
+- Shared dependencies in root
+- Workspace-specific dependencies
+- Version pinning for consistency
+
+### Build Process
+
+**Backend:**
+```bash
+npm run build    # TypeScript compilation
+npm run package  # Vite bundling
+npm run start    # Production server
+```
+
+**Frontend:**
+```bash
+npm run build    # TypeScript compilation
+npm run package  # Vite bundling with Preact
+npm run preview  # Preview production build
+```
+
+**CLI:**
+```bash
+npm run package  # Build and link globally
+jolli <command>  # Run CLI
+```
+
+### Code Quality
+
+**Linting:**
+- Biome for TypeScript/JavaScript
+- Stylelint for CSS
+- Error-on-warnings in CI
+
+**Formatting:**
+- Biome auto-formatting
+- Pre-commit hooks (planned)
+
+**Type Checking:**
+- TypeScript strict mode
+- No implicit any
+- Explicit return types
+
+## Future Enhancements
+
+### Planned Features
+
+1. **Multi-Agent Orchestration**
+   - Agent specialization
+   - Task decomposition
+   - Parallel agent execution
+
+2. **Enhanced RAG**
+   - Hybrid search (vector + keyword)
+   - Re-ranking
+   - Citation tracking
+   - Source attribution
+
+3. **Knowledge Graph**
+   - Document relationships
+   - Concept extraction
+   - Graph visualization
+   - Semantic search
+
+4. **Advanced Job Features**
+   - Job dependencies
+   - Conditional execution
+   - Manual approval steps
+   - Job templates
+
+5. **Collaboration Features**
+   - Real-time co-editing
+   - Comments and annotations
+   - Review workflows
+   - Version comparison
+
+6. **Analytics Dashboard**
+   - Usage metrics
+   - AI performance tracking
+   - Cost monitoring
+   - User insights
+
+7. **Additional Integrations**
+   - GitLab
+   - Bitbucket
+   - Confluence
+   - Notion
+   - Slack
+
+8. **Enterprise Features**
+   - SSO (SAML, OIDC)
+   - RBAC (Role-Based Access Control)
+   - Audit logging
+   - Data residency options
+
+## Conclusion
+
+Jolli's architecture is designed for scalability, maintainability, and extensibility. The monorepo structure enables code sharing while maintaining clear boundaries between components. The job scheduling system provides reliable background processing, while the agent system enables sophisticated AI-powered features. The modular design allows for easy addition of new integrations, AI providers, and features without disrupting existing functionality.
+
+Key architectural strengths:
+- **Type Safety**: Full TypeScript with strict mode
+- **Testability**: 100% test coverage with mocking support
+- **Modularity**: Clear separation of concerns
+- **Scalability**: Job-based processing, connection pooling
+- **Extensibility**: Plugin architecture for integrations
+- **Observability**: Structured logging, job monitoring
+- **Security**: OAuth, JWT, webhook verification
+- **Developer Experience**: Hot reload, dev tools, comprehensive documentation
